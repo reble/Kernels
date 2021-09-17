@@ -131,7 +131,7 @@ cblas: transpose-cblas dgemm-cblas
 
 onemkl: nstream-onemkl dgemm-onemkl dgemm-multigpu-onemkl
 
-onedpl: nstream-onedpl
+onedpl: nstream-onedpl transpose-onedpl
 
 oneapi: onemkl dpcpp sycl onedpl
 
