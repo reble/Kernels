@@ -123,7 +123,7 @@ int main(int argc, char * argv[])
 
     double * const pA = A.data();
     double * const pB = B.data();
-    dpl::for_each( dpl::execution::make_device_policy<class Transpose>(q),
+    std::for_each( dpl::execution::make_device_policy<class Transpose>(q),
 		   begin, end,
                    [order,pA,pB] (auto idx) {
         auto i = idx / order;
