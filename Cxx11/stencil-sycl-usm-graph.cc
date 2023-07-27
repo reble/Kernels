@@ -298,7 +298,11 @@ int main(int argc, char * argv[])
   }
 
   try {
-    sycl::queue q(sycl::gpu_selector_v, sycl::property::queue::in_order{});
+    sycl::property_list properties{
+        sycl::property::queue::in_order{},
+        sycl::ext::intel::property::queue::no_immediate_command_list{}};
+
+    sycl::queue q(sycl::gpu_selector_v, properties);
     prk::SYCL::print_device_platform(q);
     run<float>(q, iterations, n, block_size, star, radius);
 #ifndef DPCPP_NO_DOUBLE
