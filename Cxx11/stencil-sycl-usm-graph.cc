@@ -57,6 +57,7 @@
 ///            added constant to array "in" at end of each iteration to force
 ///            refreshing of neighbor data in parallel versions; August 2013
 ///            C++11-ification by Jeff Hammond, May 2017.
+///            Using SYCL Graph extension by Pablo Reble, July 2023.
 ///
 //////////////////////////////////////////////////////////////////////
 
