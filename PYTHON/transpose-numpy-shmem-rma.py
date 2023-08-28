@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Copyright (c) 2020, Intel Corporation
-# Copyright (c) 2021, NVIDIA
+# Copyright (c) 2023, NVIDIA
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -97,14 +97,17 @@
 # +-----------------------------------------------------------------+
 
 import sys
-from mpi4py import MPI
+if sys.version_info >= (3, 3):
+    from time import process_time as timer
+else:
+    from timeit import default_timer as timer
+from shmem4py import shmem
 import numpy
 
 def main():
 
-    comm = MPI.COMM_WORLD
-    me = comm.Get_rank()
-    np = comm.Get_size()
+    me = shmem.my_pe()
+    np = shmem.n_pes()
 
     # ********************************************************************
     # read and test input parameters
@@ -112,22 +115,30 @@ def main():
 
     if (me==0):
         print('Parallel Research Kernels version ') #, PRKVERSION
-        print('Python MPI/Numpy  Matrix transpose: B = A^T')
+        print('Python SHMEM/Numpy  Matrix transpose: B = A^T')
 
     if len(sys.argv) != 3:
-        print('argument count = ', len(sys.argv))
-        sys.exit("Usage: ./transpose <# iterations> <matrix order>")
+        if (me==0):
+            print('argument count = ', len(sys.argv))
+            print("Usage: ./transpose <# iterations> <matrix order>")
+        sys.exit()
 
     iterations = int(sys.argv[1])
     if iterations < 1:
-        sys.exit("ERROR: iterations must be >= 1")
+        if (me==0):
+            print("ERROR: iterations must be >= 1")
+        sys.exit()
 
     order = int(sys.argv[2])
     if order < 1:
-        sys.exit("ERROR: order must be >= 1")
+        if (me==0):
+            print("ERROR: order must be >= 1")
+        sys.exit()
 
     if order % np != 0:
-        sys.exit(f"ERROR: matrix order {order} should be divisible by # procs {np}")
+        if (me==0):
+            print(f"ERROR: matrix order ({order}) should be divisible by # procs ({np})")
+        sys.exit()
 
     block_order = int(order / np)
 
@@ -136,49 +147,61 @@ def main():
         print('Number of iterations = ', iterations)
         print('Matrix order         = ', order)
 
+    shmem.barrier_all()
+
     # ********************************************************************
     # ** Allocate space for the input and transpose matrix
     # ********************************************************************
 
-    A = numpy.fromfunction(lambda i,j:  me * block_order + i*order + j, (order,block_order), dtype='d')
-    B = numpy.zeros((order,block_order))
-    T = numpy.zeros((order,block_order))
+    #LA = numpy.fromfunction(lambda i,j:  me * block_order + i*order + j, (order,block_order), dtype='d')
+    #A = shmem.full((order,block_order),LA)
+    A = shmem.zeros((order,block_order))
+    B = shmem.zeros((order,block_order))
+    T = shmem.zeros((block_order,block_order))
+
+    TA = numpy.fromfunction(lambda i,j:  me * block_order + i*order + j, (order,block_order), dtype=numpy.double)
+    A[:,:] = TA[:,:]
 
     for k in range(0,iterations+1):
 
         if k<1:
-            comm.Barrier()
-            t0 = MPI.Wtime()
+            shmem.barrier_all()
+            t0 = timer()
 
-        # this actually forms the transpose of A
-        #B += numpy.transpose(A)
-        # this only uses the transpose _view_ of A
-        #B += A.T
+        for phase in range(0,np):
+            recv_from = (me + phase) % np
+            shmem.get(target=T, source=A[block_order * me : block_order * (me+1),:], pe=recv_from)
+                  
+            lo = block_order * recv_from 
+            hi = block_order * (recv_from+1)
+            B[lo:hi,:] += T.T
 
-        comm.Alltoall(A, T)
-        for r in range(0,np):
-            lo = block_order * r
-            hi = block_order * (r+1)
-            #B[lo:hi,:] += numpy.transpose(T[lo:hi,:])
-            B[lo:hi,:] += T[lo:hi,:].T
+        shmem.barrier_all()
 
         A += 1.0
+        shmem.barrier_all()
 
-    comm.Barrier()
-    t1 = MPI.Wtime()
+    t1 = timer()
     trans_time = t1 - t0
+
+    shmem.free(A)
+    shmem.free(T)
 
     # ********************************************************************
     # ** Analyze and output results.
     # ********************************************************************
 
     # allgather is non-scalable but was easier to debug
-    F = comm.allgather(B)
+    F = shmem.zeros((np,order,block_order))
+    shmem.fcollect(F,B)
     G = numpy.concatenate(F,axis=1)
     #if (me==0):
     #    print(G)
     H = numpy.fromfunction(lambda i,j: ((iterations/2.0)+(order*j+i))*(iterations+1.0), (order,order), dtype='d')
     abserr = numpy.linalg.norm(numpy.reshape(G-H,order*order),ord=1)
+
+    shmem.free(B)
+    shmem.free(F)
 
     epsilon=1.e-8
     nbytes = 2 * order**2 * 8 # 8 is not sizeof(double) in bytes, but allows for comparison to C etc.
@@ -190,7 +213,8 @@ def main():
     else:
         if (me==0):
             print('error ',abserr, ' exceeds threshold ',epsilon)
-            sys.exit("ERROR: solution did not validate")
+            print("ERROR: solution did not validate")
+
 
 if __name__ == '__main__':
     main()

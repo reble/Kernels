@@ -58,6 +58,17 @@
 import sys
 from mpi4py import MPI
 import numpy
+from numba import jit
+
+@jit(nopython=True)
+def star(n, r, A, B, W, jstart, jend, istart, iend):
+    for a in range(max(jstart, r), min(n-r-1, jend)+1):
+        a = a - jstart
+        for b in range(max(istart, r), min(n-r-1, iend)+1):
+            b = b - istart
+            for k in range(2 * r + 1):
+                B[a][b] += W[r][k] * A[a + k][b + r]
+                B[a][b] += W[k][r] * A[a + r][b + k]
 
 def factor(r):
     fac1 = int(numpy.sqrt(r+1.0))
@@ -88,7 +99,7 @@ def main():
 
     if me==0:
         print('Parallel Research Kernels ')
-        print('Python MPI/Numpy  Stencil execution on 2D grid')
+        print('Python MPI/Numba  Stencil execution on 2D grid')
 
     if len(sys.argv) < 3 or len(sys.argv) > 5:
         print('argument count = ', len(sys.argv))
@@ -319,13 +330,7 @@ def main():
                     kk = kk+1
 
         # Apply the stencil operator
-        for a in range(max(jstart,r),min(n-r-1,jend)+1):
-            a = a - jstart
-            for b in range(max(istart,r),min(n-r-1,iend)+1):
-                b = b - istart
-                B[a][b] = B[a][b] + numpy.dot(W[r],A[a:a+2*r+1,b+r])
-                B[a][b] = B[a][b] + numpy.dot(W[:,r],A[a+r,b:b+2*r+1])
-
+        star(n,r,A,B,W,jstart,jend,istart,iend)
         A[r:jend-jstart+r+1,r:iend-istart+r+1] += 1.0
         # numpy.add(A[r:jend-jstart+r+1,r:iend-istart+r+1],1.0,A[r:jend-jstart+r+1,r:iend-istart+r+1]]
 
