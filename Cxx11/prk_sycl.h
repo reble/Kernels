@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "CL/sycl.hpp"
+#include "sycl/sycl.hpp"
 
 #if defined(__LIBSYCL_MAJOR_VERSION) && defined(__LIBSYCL_MINOR_VERSION) && defined(__LIBSYCL_PATCH_VERSION)
 #    define __LIBSYCL_VERSION                                                                                          \
